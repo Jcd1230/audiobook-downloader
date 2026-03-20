@@ -24,9 +24,21 @@ async fn sync() -> anyhow::Result<()> {
         .or_else(|_| std::fs::read_to_string("jcd1230@gmail.com.json"))?;
         
     let parsed: serde_json::Value = serde_json::from_str(&token_data)?;
-    let access_token = parsed["access_token"].as_str().expect("valid token").to_string();
+    let mut auth = audible_api::auth::AuthInfo {
+        access_token: parsed["access_token"].as_str().unwrap_or("").to_string(),
+        refresh_token: parsed["refresh_token"].as_str().unwrap_or("").to_string(),
+        expires: parsed["expires"].as_u64().unwrap_or(0),
+        adp_token: parsed["adp_token"].as_str().unwrap_or("").to_string(),
+        device_private_key: parsed["device_private_key"].as_str().unwrap_or("").to_string(),
+    };
 
-    let client = audible_api::Client::new(access_token);
+    if auth.is_expired() {
+        println!("Access token expired. Refreshing...");
+        auth.refresh_access_token().await?;
+        println!("Refreshed successfully!");
+    }
+
+    let client = audible_api::Client::new(auth);
     
     println!("Fetching activation bytes...");
     let act_bytes = client.get_activation_bytes().await?;

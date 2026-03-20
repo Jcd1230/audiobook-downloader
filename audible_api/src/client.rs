@@ -1,18 +1,19 @@
 use reqwest::Client as ReqwestClient;
 use serde::Deserialize;
 use anyhow::Result;
+use crate::auth::AuthInfo;
 
 #[derive(Debug, Clone)]
 pub struct Client {
     http: ReqwestClient,
-    access_token: String,
+    auth: AuthInfo,
 }
 
 impl Client {
-    pub fn new(access_token: String) -> Self {
+    pub fn new(auth: AuthInfo) -> Self {
         Self {
             http: ReqwestClient::new(),
-            access_token,
+            auth,
         }
     }
 
@@ -25,29 +26,32 @@ impl Client {
     pub async fn get_library(&self) -> Result<Vec<LibraryItem>> {
         let url = format!("{}/library", Self::base_url());
         
-        // Using an empty/default response group to get the rich payload
         let req = self.http.get(&url)
-            .bearer_auth(&self.access_token)
+            .bearer_auth(&self.auth.access_token)
             .build()?;
 
-        let response = self.http.execute(req).await?.json::<LibraryResponse>().await?;
-        Ok(response.items)
+        let response = self.http.execute(req).await?.text().await?;
+        
+        let library_response = serde_json::from_str::<LibraryResponse>(&response)
+            .map_err(|e| anyhow::anyhow!("Failed to parse library: {}\nPayload: {}", e, response))?;
+            
+        Ok(library_response.items)
     }
 
     /// Requests the account's DRM activation bytes.
     pub async fn get_activation_bytes(&self) -> Result<String> {
         let url = "https://www.audible.com/license/token?action=register&player_manuf=Audible,Android&player_model=Android";
         
-        let req = self.http.get(url)
-            .bearer_auth(&self.access_token)
-            .build()?;
+        let mut req = self.http.get(url).build()?;
+        crate::crypto::sign_request(&mut req, &self.auth.adp_token, &self.auth.device_private_key)?;
 
         let response = self.http.execute(req).await?.bytes().await?;
         
         // C# Libation sets ACTIVATION_BLOB_SZ = 0x238
         let blob_size = 568; 
         if response.len() < blob_size {
-            anyhow::bail!("Activation blob is too small: {}", response.len());
+            let body_str = String::from_utf8_lossy(&response);
+            anyhow::bail!("Activation blob is too small: {} bytes. Response: {}", response.len(), body_str);
         }
         
         let offset = response.len() - blob_size;
@@ -67,9 +71,8 @@ impl Client {
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
             
-        let req = redirect_client.get(&url)
-            .bearer_auth(&self.access_token)
-            .build()?;
+        let mut req = redirect_client.get(&url).build()?;
+        crate::crypto::sign_request(&mut req, &self.auth.adp_token, &self.auth.device_private_key)?;
 
         let response = redirect_client.execute(req).await?;
         
