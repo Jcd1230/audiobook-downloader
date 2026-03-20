@@ -1,0 +1,8 @@
+[tools]
+rust = "latest"
+
+[tasks]
+build = "cargo build"
+test = "cargo test"
+run = "cargo run --"
+check = "cargo check"
