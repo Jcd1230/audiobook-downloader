@@ -39,6 +39,18 @@ pub enum Commands {
         /// Download all missing books or all books matching the query
         #[arg(long, short)]
         all: bool,
+
+        /// Do not generate a .cue file
+        #[arg(long)]
+        no_cue: bool,
+
+        /// Do not create a dedicated folder for the book
+        #[arg(long)]
+        no_folder: bool,
+
+        /// Template for the filename (e.g. "{author} - {title}")
+        #[arg(long)]
+        filename: Option<String>,
     },
 
     /// View or modify CLI settings

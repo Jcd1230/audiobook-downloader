@@ -38,6 +38,8 @@ impl ApiClient {
             title: "The Rust Programming Language".to_string(),
             author: "Steve Klabnik & Carol Nichols".to_string(),
             narrator: Some("Community".to_string()),
+            series_title: None,
+            series_sequence: None,
             duration_seconds: Some(36000),
             status: crate::state::BookStatus::NotDownloaded,
         };

@@ -13,6 +13,8 @@ pub struct Book {
     pub title: String,
     pub author: String,
     pub narrator: Option<String>,
+    pub series_title: Option<String>,
+    pub series_sequence: Option<String>,
     pub duration_seconds: Option<u64>,
     pub status: BookStatus,
 }

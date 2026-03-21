@@ -23,7 +23,7 @@ impl Client {
     }
 
     pub async fn get_library(&self) -> Result<Vec<LibraryItem>> {
-        let url = format!("{}/library?response_groups=contributors,product_desc,media", Self::base_url());
+        let url = format!("{}/library?response_groups=contributors,product_desc,media,series", Self::base_url());
         
         let mut req = self.http.get(&url).build()?;
         crate::crypto::sign_request(&mut req, &self.auth.adp_token, &self.auth.device_private_key)?;
@@ -111,6 +111,13 @@ pub struct LibraryItem {
     pub runtime_length_min: Option<u64>,
     pub product_images: Option<ProductImages>,
     pub is_downloaded: Option<bool>,
+    pub series: Option<Vec<SeriesInfo>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SeriesInfo {
+    pub title: Option<String>,
+    pub sequence: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

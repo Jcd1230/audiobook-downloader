@@ -16,7 +16,7 @@ pub async fn handle(command: Commands) -> anyhow::Result<()> {
         Commands::List => list().await,
         Commands::Search { query } => search(&query).await,
         Commands::Info { id } => info(&id).await,
-        Commands::Download { query, all } => download(query.as_deref(), all).await,
+        Commands::Download { query, all, no_cue, no_folder, filename } => download(query.as_deref(), all, no_cue, no_folder, filename).await,
         Commands::Config => config().await,
     }
 }
@@ -68,11 +68,23 @@ async fn sync() -> anyhow::Result<()> {
         let narrators = item.narrators.map(|n| n.into_iter().map(|c| c.name).collect::<Vec<_>>().join(", ")).unwrap_or_default();
         let narrator_opt = if narrators.is_empty() { None } else { Some(narrators) };
         
+        let (series_title, series_sequence) = if let Some(series_list) = item.series {
+            if let Some(first_series) = series_list.into_iter().next() {
+                (first_series.title, first_series.sequence)
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+        
         let book = crate::state::Book {
             id: item.asin,
             title: item.title,
             author: authors,
             narrator: narrator_opt,
+            series_title,
+            series_sequence,
             duration_seconds: item.runtime_length_min.map(|m| m * 60),
             status: crate::state::BookStatus::NotDownloaded,
         };
@@ -137,7 +149,7 @@ async fn info(id: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn download(query: Option<&str>, all: bool) -> anyhow::Result<()> {
+async fn download(query: Option<&str>, all: bool, no_cue: bool, no_folder: bool, filename: Option<String>) -> anyhow::Result<()> {
     let auth_path = get_config_dir().join("auth.json");
     let token_data = std::fs::read_to_string(&auth_path)
         .map_err(|_| anyhow::anyhow!("Please run 'audiobook-downloader auth' first."))?;
@@ -205,11 +217,35 @@ async fn download(query: Option<&str>, all: bool) -> anyhow::Result<()> {
         
         let safe_title = book.title.replace("/", "_").replace(":", " -");
         let safe_author = book.author.replace("/", "_");
-        let aax_file_name = format!("{} - {}.aax", safe_author, safe_title);
-        let m4b_file_name = format!("{} - {}.m4b", safe_author, safe_title);
         
-        let aax_path = download_dir.join(&aax_file_name);
-        let m4b_path = download_dir.join(&m4b_file_name);
+        let template = filename.clone().unwrap_or_else(|| "{author} - {title}".to_string());
+        let mut final_name = template;
+        final_name = final_name.replace("{title}", &safe_title);
+        final_name = final_name.replace("{author}", &safe_author);
+        final_name = final_name.replace("{asin}", &book.id);
+        
+        let safe_series = book.series_title.as_deref().unwrap_or("").replace("/", "_").replace(":", " -");
+        let safe_book_num = book.series_sequence.as_deref().unwrap_or("").replace("/", "_");
+        
+        final_name = final_name.replace("{series}", &safe_series);
+        final_name = final_name.replace("{book_number}", &safe_book_num);
+        final_name = final_name.trim().to_string(); // small clean up
+
+        let dir_path = if no_folder {
+            download_dir.clone()
+        } else {
+            let mut p = download_dir.clone();
+            p.push(&final_name);
+            p
+        };
+        
+        std::fs::create_dir_all(&dir_path)?;
+        
+        let aax_file_name = format!("{}.aax", final_name);
+        let m4b_file_name = format!("{}.m4b", final_name);
+        
+        let aax_path = dir_path.join(&aax_file_name);
+        let m4b_path = dir_path.join(&m4b_file_name);
         
         println!("Downloading {}...", aax_file_name);
         downloader.download(&url, &aax_path).await?;
@@ -219,6 +255,14 @@ async fn download(query: Option<&str>, all: bool) -> anyhow::Result<()> {
         decryptor.decrypt(&aax_path, &m4b_path, &activation_bytes)?;
         
         println!("Decryption of {} complete!", safe_title);
+        
+        if !no_cue {
+            println!("Generating CUE file...");
+            let cue_path = dir_path.join(format!("{}.cue", final_name));
+            if let Err(e) = decryptor.extract_cue(&m4b_path, &cue_path, &book.title, &book.author, &m4b_file_name) {
+                println!("Warning: Failed to generate CUE file: {}", e);
+            }
+        }
         
         // Update state
         book.status = crate::state::BookStatus::Decrypted;
