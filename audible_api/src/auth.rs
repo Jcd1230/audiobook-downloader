@@ -165,8 +165,13 @@ pub async fn login_with_browser() -> Result<AuthInfo> {
     let resp = http.post(&api_url)
         .json(&payload)
         .send()
-        .await?
-        .error_for_status()?;
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let error_body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Amazon Error ({}): {}", status, error_body);
+    }
 
     let data: RegisterResponse = resp.json().await?;
     let tokens = data.response.success.tokens;

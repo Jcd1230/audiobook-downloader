@@ -15,7 +15,8 @@ pub fn generate_pkce_pair() -> (String, String) {
     let verifier = URL_SAFE_NO_PAD.encode(verifier_bytes);
     
     let mut hasher = Sha256::new();
-    hasher.update(&verifier_bytes); // audible-cli uses verifier_bytes directly for the hash
+    // Amazon requires hashing the ASCII string representation of the verifier
+    hasher.update(verifier.as_bytes()); 
     let challenge = URL_SAFE_NO_PAD.encode(hasher.finalize());
     
     (verifier, challenge)

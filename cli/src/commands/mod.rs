@@ -1,5 +1,14 @@
 use crate::cli::Commands;
 
+use std::path::PathBuf;
+
+fn get_config_dir() -> PathBuf {
+    let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push("audiobook-downloader");
+    std::fs::create_dir_all(&path).unwrap();
+    path
+}
+
 pub async fn handle(command: Commands) -> anyhow::Result<()> {
     match command {
         Commands::Auth => auth().await,
@@ -12,29 +21,32 @@ pub async fn handle(command: Commands) -> anyhow::Result<()> {
 }
 
 async fn auth() -> anyhow::Result<()> {
-    println!("Auth flow...");
+    println!("Starting native Audible authentication flow...");
+    let auth_info = audible_api::auth::login_with_browser().await?;
+    
+    let out_json = serde_json::to_string_pretty(&auth_info)?;
+    let auth_path = get_config_dir().join("auth.json");
+    std::fs::write(&auth_path, out_json)?;
+    
+    println!("Successfully authenticated! Credentials saved natively to {}", auth_path.display());
     Ok(())
 }
 
 async fn sync() -> anyhow::Result<()> {
     println!("Syncing library...");
     
-    // For testing, we read the provided token directly
-    let token_data = std::fs::read_to_string("../jcd1230@gmail.com.json")
-        .or_else(|_| std::fs::read_to_string("jcd1230@gmail.com.json"))?;
+    let auth_path = get_config_dir().join("auth.json");
+    let token_data = std::fs::read_to_string(&auth_path)
+        .map_err(|_| anyhow::anyhow!("Please run 'audiobook-downloader auth' first."))?;
         
-    let parsed: serde_json::Value = serde_json::from_str(&token_data)?;
-    let mut auth = audible_api::auth::AuthInfo {
-        access_token: parsed["access_token"].as_str().unwrap_or("").to_string(),
-        refresh_token: parsed["refresh_token"].as_str().unwrap_or("").to_string(),
-        expires: parsed["expires"].as_u64().unwrap_or(0),
-        adp_token: parsed["adp_token"].as_str().unwrap_or("").to_string(),
-        device_private_key: parsed["device_private_key"].as_str().unwrap_or("").to_string(),
-    };
+    let mut auth: audible_api::auth::AuthInfo = serde_json::from_str(&token_data)?;
 
     if auth.is_expired() {
         println!("Access token expired. Refreshing...");
         auth.refresh_access_token().await?;
+        
+        let out_json = serde_json::to_string_pretty(&auth)?;
+        std::fs::write(&auth_path, out_json)?;
         println!("Refreshed successfully!");
     }
 
