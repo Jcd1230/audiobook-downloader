@@ -14,8 +14,9 @@ pub async fn handle(command: Commands) -> anyhow::Result<()> {
         Commands::Auth => auth().await,
         Commands::Sync => sync().await,
         Commands::List => list().await,
+        Commands::Search { query } => search(&query).await,
         Commands::Info { id } => info(&id).await,
-        Commands::Download { id, all } => download(id.as_deref(), all).await,
+        Commands::Download { query, all } => download(query.as_deref(), all).await,
         Commands::Config => config().await,
     }
 }
@@ -89,12 +90,54 @@ async fn list() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn search_library(state: &crate::state::LibraryState, query: &str) -> Vec<crate::state::Book> {
+    let lower_query = query.to_lowercase();
+    let mut exact_id_matches = Vec::new();
+    let mut exact_title_matches = Vec::new();
+    let mut substring_matches = Vec::new();
+
+    for book in state.books.values() {
+        if book.id.to_lowercase() == lower_query {
+            exact_id_matches.push(book.clone());
+        } else if book.title.to_lowercase() == lower_query {
+            exact_title_matches.push(book.clone());
+        } else if book.title.to_lowercase().contains(&lower_query) {
+            substring_matches.push(book.clone());
+        }
+    }
+
+    if !exact_id_matches.is_empty() {
+        exact_id_matches
+    } else if !exact_title_matches.is_empty() {
+        exact_title_matches
+    } else {
+        substring_matches
+    }
+}
+
+async fn search(query: &str) -> anyhow::Result<()> {
+    let library_file = get_config_dir().join("library.json");
+    let state = crate::state::LibraryState::load(&library_file)?;
+    
+    let results = search_library(&state, query);
+    
+    if results.is_empty() {
+        println!("No books found matching '{}'", query);
+    } else {
+        println!("Found {} matching books:", results.len());
+        for book in results {
+            println!("- {} ({}) by {} [{:?}]", book.title, book.id, book.author, book.status);
+        }
+    }
+    Ok(())
+}
+
 async fn info(id: &str) -> anyhow::Result<()> {
     println!("Info for book {}", id);
     Ok(())
 }
 
-async fn download(id: Option<&str>, all: bool) -> anyhow::Result<()> {
+async fn download(query: Option<&str>, all: bool) -> anyhow::Result<()> {
     let auth_path = get_config_dir().join("auth.json");
     let token_data = std::fs::read_to_string(&auth_path)
         .map_err(|_| anyhow::anyhow!("Please run 'audiobook-downloader auth' first."))?;
@@ -111,21 +154,28 @@ async fn download(id: Option<&str>, all: bool) -> anyhow::Result<()> {
     
     let mut books_to_download = Vec::new();
 
-    if all {
+    if let Some(q) = query {
+        let matches = search_library(&state, q);
+        if matches.is_empty() {
+            anyhow::bail!("No books found matching '{}'. Try running 'audiobook-downloader search'.", q);
+        } else if matches.len() == 1 || all {
+            books_to_download.extend(matches);
+        } else {
+            println!("Found {} matching books. Please be more specific or use --all:", matches.len());
+            for book in matches {
+                println!("- {} ({}) by {}", book.title, book.id, book.author);
+            }
+            anyhow::bail!("Multiple books matched the query. Aborting.");
+        }
+    } else if all {
         println!("Finding all missing books...");
         for book in state.books.values() {
             if book.status == crate::state::BookStatus::NotDownloaded {
                 books_to_download.push(book.clone());
             }
         }
-    } else if let Some(book_id) = id {
-        if let Some(book) = state.get_book(book_id) {
-            books_to_download.push(book.clone());
-        } else {
-            anyhow::bail!("Book {} not found in library. Did you run sync first?", book_id);
-        }
     } else {
-        anyhow::bail!("Please specify a book ID or use --all.");
+        anyhow::bail!("Please specify a query (title or ID) or use --all.");
     }
     
     if books_to_download.is_empty() {

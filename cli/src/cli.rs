@@ -25,13 +25,19 @@ pub enum Commands {
         id: String,
     },
 
+    /// Search for an audiobook in the local library
+    Search {
+        /// The title or ID to search for
+        query: String,
+    },
+
     /// Download and decrypt an audiobook
     Download {
-        /// The ID of the audiobook to download
-        id: Option<String>,
+        /// The title or ID of the audiobook to download
+        query: Option<String>,
 
-        /// Download all missing books
-        #[arg(long)]
+        /// Download all missing books or all books matching the query
+        #[arg(long, short)]
         all: bool,
     },
 
