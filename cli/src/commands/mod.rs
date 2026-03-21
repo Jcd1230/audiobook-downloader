@@ -58,20 +58,28 @@ async fn sync() -> anyhow::Result<()> {
 
     println!("Fetching library...");
     let library = client.get_library().await?;
-    println!("Found {} books. Displaying first 3:", library.len());
     
-    for book in library.iter().take(3) {
-        println!("- {} ({})", book.title, book.asin);
+    let library_file = get_config_dir().join("library.json");
+    let mut state = crate::state::LibraryState::load(&library_file)?;
+    
+    for item in library {
+        let authors = item.authors.map(|a| a.into_iter().map(|c| c.name).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+        let narrators = item.narrators.map(|n| n.into_iter().map(|c| c.name).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+        let narrator_opt = if narrators.is_empty() { None } else { Some(narrators) };
+        
+        let book = crate::state::Book {
+            id: item.asin,
+            title: item.title,
+            author: authors,
+            narrator: narrator_opt,
+            duration_seconds: item.runtime_length_min.map(|m| m * 60),
+            status: crate::state::BookStatus::NotDownloaded,
+        };
+        state.upsert_book(book);
     }
     
-    if let Some(first_book) = library.first() {
-        println!("Fetching download URL for {}...", first_book.title);
-        let url = client.get_aax_download_url(&first_book.asin).await;
-        match url {
-            Ok(u) => println!("Download URL: {}", u),
-            Err(e) => println!("Could not fetch download URL: {}", e),
-        }
-    }
+    state.save(&library_file)?;
+    println!("Successfully synced {} books to your local library state.", state.books.len());
 
     Ok(())
 }
@@ -87,11 +95,87 @@ async fn info(id: &str) -> anyhow::Result<()> {
 }
 
 async fn download(id: Option<&str>, all: bool) -> anyhow::Result<()> {
-    if all {
-        println!("Downloading all missing books...");
-    } else if let Some(book_id) = id {
-        println!("Downloading book {}", book_id);
+    let auth_path = get_config_dir().join("auth.json");
+    let token_data = std::fs::read_to_string(&auth_path)
+        .map_err(|_| anyhow::anyhow!("Please run 'audiobook-downloader auth' first."))?;
+        
+    let mut auth: audible_api::auth::AuthInfo = serde_json::from_str(&token_data)?;
+    if auth.is_expired() {
+        auth.refresh_access_token().await?;
+        std::fs::write(&auth_path, serde_json::to_string_pretty(&auth)?)?;
     }
+    
+    let client = audible_api::Client::new(auth);
+    let library_file = get_config_dir().join("library.json");
+    let mut state = crate::state::LibraryState::load(&library_file)?;
+    
+    let mut books_to_download = Vec::new();
+
+    if all {
+        println!("Finding all missing books...");
+        for book in state.books.values() {
+            if book.status == crate::state::BookStatus::NotDownloaded {
+                books_to_download.push(book.clone());
+            }
+        }
+    } else if let Some(book_id) = id {
+        if let Some(book) = state.get_book(book_id) {
+            books_to_download.push(book.clone());
+        } else {
+            anyhow::bail!("Book {} not found in library. Did you run sync first?", book_id);
+        }
+    } else {
+        anyhow::bail!("Please specify a book ID or use --all.");
+    }
+    
+    if books_to_download.is_empty() {
+        println!("No books to download.");
+        return Ok(());
+    }
+    
+    println!("Found {} books to download.", books_to_download.len());
+    
+    let downloader = crate::download::Downloader::new();
+    let decryptor = crate::media::FfmpegDecryptor::new();
+    let download_dir = std::env::current_dir()?; // We can make this configurable later
+    
+    // Fetch activation bytes once for the batch
+    println!("Fetching DRM activation bytes...");
+    let activation_bytes = client.get_activation_bytes().await?;
+    println!("Activation bytes acquired: {}", activation_bytes);
+    
+    for mut book in books_to_download {
+        if book.status != crate::state::BookStatus::NotDownloaded {
+            println!("Skipping {} (Already downloaded or decrypted)", book.title);
+            continue;
+        }
+
+        println!("Requesting download URL for '{}'...", book.title);
+        let url = client.get_aax_download_url(&book.id).await?;
+        
+        let safe_title = book.title.replace("/", "_").replace(":", " -");
+        let safe_author = book.author.replace("/", "_");
+        let aax_file_name = format!("{} - {}.aax", safe_author, safe_title);
+        let m4b_file_name = format!("{} - {}.m4b", safe_author, safe_title);
+        
+        let aax_path = download_dir.join(&aax_file_name);
+        let m4b_path = download_dir.join(&m4b_file_name);
+        
+        println!("Downloading {}...", aax_file_name);
+        downloader.download(&url, &aax_path).await?;
+        
+        println!("Download complete! Decrypting to {}...", m4b_file_name);
+        use crate::media::Decryptor;
+        decryptor.decrypt(&aax_path, &m4b_path, &activation_bytes)?;
+        
+        println!("Decryption of {} complete!", safe_title);
+        
+        // Update state
+        book.status = crate::state::BookStatus::Decrypted;
+        state.upsert_book(book);
+        state.save(&library_file)?;
+    }
+
     Ok(())
 }
 

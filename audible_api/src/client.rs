@@ -22,13 +22,11 @@ impl Client {
         "https://api.audible.com/1.0"
     }
 
-    /// Fetches the user's library items
     pub async fn get_library(&self) -> Result<Vec<LibraryItem>> {
-        let url = format!("{}/library", Self::base_url());
+        let url = format!("{}/library?response_groups=contributors,product_desc,media", Self::base_url());
         
-        let req = self.http.get(&url)
-            .bearer_auth(&self.auth.access_token)
-            .build()?;
+        let mut req = self.http.get(&url).build()?;
+        crate::crypto::sign_request(&mut req, &self.auth.adp_token, &self.auth.device_private_key)?;
 
         let response = self.http.execute(req).await?.text().await?;
         
@@ -40,49 +38,67 @@ impl Client {
 
     /// Requests the account's DRM activation bytes.
     pub async fn get_activation_bytes(&self) -> Result<String> {
-        let url = "https://www.audible.com/license/token?action=register&player_manuf=Audible,Android&player_model=Android";
+        let url = "https://www.audible.com/license/token?action=register&player_manuf=Audible,iPhone&player_model=iPhone";
         
-        let mut req = self.http.get(url).build()?;
-        crate::crypto::sign_request(&mut req, &self.auth.adp_token, &self.auth.device_private_key)?;
+        for _ in 0..5 {
+            let mut req = self.http.get(url).build()?;
+            crate::crypto::sign_request(&mut req, &self.auth.adp_token, &self.auth.device_private_key)?;
 
-        let response = self.http.execute(req).await?.bytes().await?;
-        
-        // C# Libation sets ACTIVATION_BLOB_SZ = 0x238
-        let blob_size = 568; 
-        if response.len() < blob_size {
-            let body_str = String::from_utf8_lossy(&response);
-            anyhow::bail!("Activation blob is too small: {} bytes. Response: {}", response.len(), body_str);
+            let response_bytes = self.http.execute(req).await?.bytes().await?;
+            let blob = response_bytes.to_vec();
+
+            if blob.len() >= 568 {
+                let data = &blob[blob.len() - 568..];
+                
+                let mut joined_data = Vec::with_capacity(70 * 8);
+                for i in 0..8 {
+                    let start = i * 71;
+                    if start + 70 <= data.len() {
+                        joined_data.extend_from_slice(&data[start..start + 70]);
+                    }
+                }
+                
+                if joined_data.len() >= 4 {
+                    let act_bytes_slice = &joined_data[0..4];
+                    let act_bytes = u32::from_le_bytes(act_bytes_slice.try_into()?);
+                    return Ok(format!("{:08x}", act_bytes));
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
         
-        let offset = response.len() - blob_size;
-        let act_bytes_slice = &response[offset..offset + 4];
-        
-        let act_bytes = u32::from_le_bytes(act_bytes_slice.try_into()?);
-        Ok(format!("{:08x}", act_bytes))
+        anyhow::bail!("Failed to acquire a valid activation blob after retries.")
     }
 
-    /// Fetches the download URL for an AAX file (the AAX workaround method).
+    /// Fetches the download URL for an audiobook using the official licenserequest endpoint.
     pub async fn get_aax_download_url(&self, asin: &str) -> Result<String> {
-        // We use Amazon's CDE delivery service instead of api.audible.com
-        let url = format!("https://cde-ta-g7g.amazon.com/FionaCDEServiceEngine/FSDownloadContent?type=AUDI&currentTransportMethod=WIFI&key={}&codec=aax", asin);
+        let url = format!("{}/content/{}/licenserequest", Self::base_url(), asin);
         
-        // This request replies with a 302 Found redirect
-        let redirect_client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
+        let body = serde_json::json!({
+            "supported_drm_types": ["Adrm", "Mpeg"],
+            "quality": "High",
+            "consumption_type": "Download",
+            "response_groups": "last_position_heard,pdf_url,content_reference"
+        });
+
+        let mut req = self.http.post(&url)
+            .header("X-ADP-SW", "37801821")
+            .header("X-ADP-Transport", "WIFI")
+            .header("X-ADP-LTO", "120")
+            .header("X-Device-Type-Id", "A2CZJZGLK2JJVM")
+            .header("device_idiom", "phone")
+            .json(&body)
             .build()?;
             
-        let mut req = redirect_client.get(&url).build()?;
         crate::crypto::sign_request(&mut req, &self.auth.adp_token, &self.auth.device_private_key)?;
 
-        let response = redirect_client.execute(req).await?;
+        let response: serde_json::Value = self.http.execute(req).await?.json().await?;
         
-        if response.status().is_redirection() {
-            if let Some(location) = response.headers().get(reqwest::header::LOCATION) {
-                return Ok(location.to_str()?.to_string());
-            }
-        }
-        
-        anyhow::bail!("Failed to get download URL, expected 302 Redirect.")
+        let download_url = response["content_license"]["content_metadata"]["content_url"]["offline_url"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("Could not find offline_url in license response: {}", response))?;
+            
+        Ok(download_url.to_string())
     }
 }
 

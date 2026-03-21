@@ -1,32 +1,45 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
 
-/// A trait for decrypting audiobook files.
 pub trait Decryptor {
-    /// Decrypts a file from `input_path` to `output_path`.
-    fn decrypt(&self, input_path: &Path, output_path: &Path, activation_bytes: &str) -> Result<()>;
+    fn decrypt(&self, input: &Path, output: &Path, activation_bytes: &str) -> Result<()>;
 }
 
-/// Uses an external `ffmpeg` process to decrypt `.aax` / `.aaxc` files.
 pub struct FfmpegDecryptor;
 
+impl Default for FfmpegDecryptor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FfmpegDecryptor {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
 impl Decryptor for FfmpegDecryptor {
-    fn decrypt(&self, input_path: &Path, output_path: &Path, activation_bytes: &str) -> Result<()> {
-        // Run ffmpeg -activation_bytes <BYTES> -i <IN> -c copy <OUT>
+    fn decrypt(&self, input: &Path, output: &Path, activation_bytes: &str) -> Result<()> {
         let status = Command::new("ffmpeg")
+            .arg("-y") // Overwrite output files without asking
             .arg("-activation_bytes")
             .arg(activation_bytes)
             .arg("-i")
-            .arg(input_path)
+            .arg(input)
             .arg("-c")
             .arg("copy")
-            .arg(output_path)
-            .status()?;
+            .arg(output)
+            .status()
+            .context("Failed to spawn ffmpeg. Is it installed and in your PATH?")?;
 
         if !status.success() {
-            anyhow::bail!("ffmpeg failed to decrypt the file");
+            anyhow::bail!("ffmpeg failed to decrypt the audiobook with status: {}", status);
         }
+        
+        // Clean up the original encrypted .aax file
+        std::fs::remove_file(input).context("Failed to clean up original .aax file after decryption")?;
 
         Ok(())
     }

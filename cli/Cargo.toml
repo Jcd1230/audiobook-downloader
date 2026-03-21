@@ -12,4 +12,5 @@ anyhow = { workspace = true }
 clap = { version = "4.5.4", features = ["derive"] }
 indicatif = "0.17.8"
 audible_api = { path = "../audible_api" }
+futures-util = { workspace = true }
 dirs.workspace = true
