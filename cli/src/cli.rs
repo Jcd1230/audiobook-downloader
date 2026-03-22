@@ -17,7 +17,11 @@ pub enum Commands {
     Sync,
 
     /// List available books in the local state
-    List,
+    List {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
 
     /// View details and metadata for a specific book
     Info {

@@ -1,4 +1,5 @@
 use crate::cli::Commands;
+use colored::*;
 
 use std::path::PathBuf;
 
@@ -13,7 +14,7 @@ pub async fn handle(command: Commands) -> anyhow::Result<()> {
     match command {
         Commands::Auth => auth().await,
         Commands::Sync => sync().await,
-        Commands::List => list().await,
+        Commands::List { json } => list(json).await,
         Commands::Search { query } => search(&query).await,
         Commands::Info { id } => info(&id).await,
         Commands::Download { query, all, no_cue, no_folder, filename } => download(query.as_deref(), all, no_cue, no_folder, filename).await,
@@ -97,8 +98,63 @@ async fn sync() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn list() -> anyhow::Result<()> {
-    println!("Listing locally cached books...");
+fn format_book_line(book: &crate::state::Book) -> String {
+    let status_str = match book.status {
+        crate::state::BookStatus::NotDownloaded => "[NotDownloaded]",
+        crate::state::BookStatus::Downloading => "[Downloading  ]",
+        crate::state::BookStatus::Downloaded => "[Downloaded   ]",
+        crate::state::BookStatus::Decrypted => "[Decrypted    ]",
+    };
+
+    let status_label = match book.status {
+        crate::state::BookStatus::NotDownloaded => status_str.dimmed(),
+        crate::state::BookStatus::Downloading => status_str.blue(),
+        crate::state::BookStatus::Downloaded => status_str.cyan(),
+        crate::state::BookStatus::Decrypted => status_str.green(),
+    };
+
+    let title = book.title.bold().white();
+    
+    let mut line = format!("{} {}", status_label, title);
+
+    if !book.author.is_empty() {
+        line.push_str(&format!(" {} {}", "·".dimmed(), book.author.italic().dimmed()));
+    }
+
+    line.push_str(&format!(" {}", format!("({})", book.id).dimmed()));
+
+    line
+}
+
+async fn list(json: bool) -> anyhow::Result<()> {
+    let library_file = get_config_dir().join("library.json");
+    let state = crate::state::LibraryState::load(&library_file)?;
+    
+    let mut books: Vec<_> = state.books.values().collect();
+    books.sort_by(|a, b| {
+        let title_a = a.title.to_lowercase();
+        let title_b = b.title.to_lowercase();
+        title_a.cmp(&title_b).then_with(|| a.id.cmp(&b.id))
+    });
+
+    if json {
+        if books.is_empty() {
+            eprintln!("No books in local library. Run 'sync' first.");
+            println!("[]");
+        } else {
+            println!("{}", serde_json::to_string_pretty(&books)?);
+        }
+    } else {
+        println!("Listing locally cached books...");
+        if books.is_empty() {
+            println!("No books in local library. Run 'sync' first.");
+        } else {
+            println!("Found {} books in local library:", books.len());
+            for book in books {
+                println!("{}", format_book_line(book));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -138,7 +194,7 @@ async fn search(query: &str) -> anyhow::Result<()> {
     } else {
         println!("Found {} matching books:", results.len());
         for book in results {
-            println!("- {} ({}) by {} [{:?}]", book.title, book.id, book.author, book.status);
+            println!("{}", format_book_line(&book));
         }
     }
     Ok(())
@@ -175,7 +231,7 @@ async fn download(query: Option<&str>, all: bool, no_cue: bool, no_folder: bool,
         } else {
             println!("Found {} matching books. Please be more specific or use --all:", matches.len());
             for book in matches {
-                println!("- {} ({}) by {}", book.title, book.id, book.author);
+                println!("{}", format_book_line(&book));
             }
             anyhow::bail!("Multiple books matched the query. Aborting.");
         }
