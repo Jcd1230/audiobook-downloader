@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod completions;
 pub mod config;
 pub mod download;
 pub mod import;
@@ -28,5 +29,6 @@ pub async fn handle(command: Commands, config: Config, yes: bool) -> Result<()> 
             filename,
         } => download::download(query.as_deref(), all, no_cue, no_folder, filename, config, yes).await,
         Commands::Config { subcommand } => config::config(subcommand, config).await,
+        Commands::Completions { shell } => completions::completions(shell).await,
     }
 }

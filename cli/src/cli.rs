@@ -85,6 +85,13 @@ pub enum Commands {
         #[command(subcommand)]
         subcommand: ConfigSubcommand,
     },
+
+    /// Generate shell completion scripts
+    Completions {
+        /// The shell to generate completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Subcommand)]
