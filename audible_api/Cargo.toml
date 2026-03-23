@@ -16,3 +16,5 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 rand.workspace = true
 hex.workspace = true
+thiserror = "2.0.11"
+tracing = "0.1.41"
