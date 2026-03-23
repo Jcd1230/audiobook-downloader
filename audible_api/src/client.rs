@@ -1,7 +1,8 @@
 use reqwest::Client as ReqwestClient;
 use serde::Deserialize;
-use anyhow::Result;
+use crate::Result;
 use crate::auth::AuthInfo;
+use tracing::{info, debug, warn};
 
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -23,6 +24,7 @@ impl Client {
     }
 
     pub async fn get_library(&self) -> Result<Vec<LibraryItem>> {
+        debug!("Fetching library metadata...");
         let url = format!("{}/library?response_groups=contributors,product_desc,media,series", Self::base_url());
         
         let mut req = self.http.get(&url).build()?;
@@ -31,16 +33,19 @@ impl Client {
         let response = self.http.execute(req).await?.text().await?;
         
         let library_response = serde_json::from_str::<LibraryResponse>(&response)
-            .map_err(|e| anyhow::anyhow!("Failed to parse library: {}\nPayload: {}", e, response))?;
+            .map_err(|e| crate::Error::Auth(format!("Failed to parse library: {}\nPayload: {}", e, response)))?;
             
+        debug!("Successfully fetched {} library items", library_response.items.len());
         Ok(library_response.items)
     }
 
     /// Requests the account's DRM activation bytes.
     pub async fn get_activation_bytes(&self) -> Result<String> {
+        info!("Acquiring DRM activation bytes...");
         let url = "https://www.audible.com/license/token?action=register&player_manuf=Audible,iPhone&player_model=iPhone";
         
-        for _ in 0..5 {
+        for i in 0..5 {
+            debug!("Activation attempt {}/5", i + 1);
             let mut req = self.http.get(url).build()?;
             crate::crypto::sign_request(&mut req, &self.auth.adp_token, &self.auth.device_private_key)?;
 
@@ -60,18 +65,20 @@ impl Client {
                 
                 if joined_data.len() >= 4 {
                     let act_bytes_slice = &joined_data[0..4];
-                    let act_bytes = u32::from_le_bytes(act_bytes_slice.try_into()?);
+                    let act_bytes = u32::from_le_bytes(act_bytes_slice.try_into().map_err(|_| crate::Error::Auth("Failed to parse activation bytes".to_string()))?);
                     return Ok(format!("{:08x}", act_bytes));
                 }
             }
+            warn!("Activation attempt {} failed, retrying...", i + 1);
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
         
-        anyhow::bail!("Failed to acquire a valid activation blob after retries.")
+        Err(crate::Error::Auth("Failed to acquire a valid activation blob after retries.".to_string()))
     }
 
     /// Fetches the download URL for an audiobook using the official licenserequest endpoint.
     pub async fn get_aax_download_url(&self, asin: &str) -> Result<String> {
+        info!("Requesting download URL for ASIN: {}", asin);
         let url = format!("{}/content/{}/licenserequest", Self::base_url(), asin);
         
         let body = serde_json::json!({
@@ -96,8 +103,9 @@ impl Client {
         
         let download_url = response["content_license"]["content_metadata"]["content_url"]["offline_url"]
             .as_str()
-            .ok_or_else(|| anyhow::anyhow!("Could not find offline_url in license response: {}", response))?;
+            .ok_or_else(|| crate::Error::Auth(format!("Could not find offline_url in license response: {}", response)))?;
             
+        debug!("Download URL acquired successfully");
         Ok(download_url.to_string())
     }
 }

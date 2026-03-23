@@ -1,11 +1,11 @@
-use anyhow::{Context, Result};
+use crate::Result;
 use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use crate::crypto::{build_client_id, generate_pkce_pair};
-use std::net::TcpListener;
-use std::io::{Read, Write};
+use std::io::Write;
+use tracing::{info, debug, warn};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AuthInfo {
@@ -31,6 +31,7 @@ impl AuthInfo {
 
     /// Refreshes the access token via Amazon's OAuth endpoint
     pub async fn refresh_access_token(&mut self) -> Result<()> {
+        info!("Refreshing Audible access token...");
         let http = Client::new();
         
         let params = [
@@ -52,6 +53,7 @@ impl AuthInfo {
         self.access_token = data.access_token;
         self.expires = (Utc::now().timestamp() as u64) + data.expires_in;
         
+        debug!("Access token refreshed successfully. Expires in {}s", data.expires_in);
         Ok(())
     }
 }
@@ -93,7 +95,7 @@ struct MacDmsToken {
 /// Generates the Amazon OAuth login URL, waits on a local HTTP server for the redirect callback, 
 /// and exchanges the authorization_code for Audible Device keys natively.
 pub async fn login_with_browser() -> Result<AuthInfo> {
-    let port = 8080;
+    debug!("Initializing browser login flow...");
     
     // 1. Generate PKCE & Serial
     let (verifier, challenge) = generate_pkce_pair();
@@ -124,9 +126,9 @@ pub async fn login_with_browser() -> Result<AuthInfo> {
     let url_str = input.trim();
 
     let auth_code = extract_code_from_url(url_str)
-        .context("Failed to find openid.oa2.authorization_code in the provided URL")?;
+        .ok_or_else(|| crate::Error::Auth("Failed to find openid.oa2.authorization_code in the provided URL".to_string()))?;
         
-    println!("\nAuthenticating device...");
+    info!("Exchanging auth code for device registration tokens...");
 
     // 2. Exchange code for device registration tokens
     let http = Client::new();
@@ -168,9 +170,10 @@ pub async fn login_with_browser() -> Result<AuthInfo> {
         .await?;
 
     if !resp.status().is_success() {
-        let status = resp.status();
-        let error_body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("Amazon Error ({}): {}", status, error_body);
+        let status = resp.status().to_string();
+        let body = resp.text().await.unwrap_or_default();
+        warn!("Amazon registration failed: {} - {}", status, body);
+        return Err(crate::Error::RegisterError { status, body });
     }
 
     let data: RegisterResponse = resp.json().await?;
