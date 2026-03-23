@@ -4,6 +4,10 @@ use clap::{Parser, Subcommand};
 #[command(name = "audiobook-downloader")]
 #[command(about = "A fast, modular CLI to manage and download audiobooks.", long_about = None)]
 pub struct Cli {
+    /// Enable verbose logging
+    #[arg(long, short, global = true)]
+    pub verbose: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
