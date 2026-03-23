@@ -14,6 +14,8 @@ pub enum Error {
     Auth(String),
     #[error("Amazon registration error ({status}): {body}")]
     RegisterError { status: String, body: String },
+    #[error("License denied for ASIN: {0}")]
+    LicenseDenied(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -120,7 +120,19 @@ pub async fn download(
         global_pb.set_message(format!("Current: {}", book.title));
         
         info!("Requesting download URL for '{}'...", book.title);
-        let url = client.get_aax_download_url(&book.id).await?;
+        let url = match client.get_aax_download_url(&book.id).await {
+            Ok(url) => url,
+            Err(audible_api::Error::LicenseDenied(asin)) => {
+                tracing::warn!("License denied for ASIN: {}. Marking as Unavailable.", asin);
+                eprintln!("\n⚠️ This title is no longer available for download from Audible (License Denied): {}", book.title);
+                book.status = crate::state::BookStatus::Unavailable;
+                state.upsert_book(book);
+                let _ = state.save(&library_file);
+                global_pb.inc(1);
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         let safe_title = book.title.replace("/", "_").replace(":", " -");
         let safe_author = book.author.replace("/", "_");

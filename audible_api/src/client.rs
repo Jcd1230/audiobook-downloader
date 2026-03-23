@@ -130,8 +130,12 @@ impl Client {
 
         let response: serde_json::Value = self.http.execute(req).await?.json().await?;
 
-        let download_url = response["content_license"]["content_metadata"]["content_url"]
-            ["offline_url"]
+        if response["content_license"]["status_code"] == "Denied" {
+            return Err(crate::Error::LicenseDenied(asin.to_string()));
+        }
+
+        let download_url = response["content_license"]["content_metadata"]["content_url"]["offline_url"]
+
             .as_str()
             .ok_or_else(|| {
                 crate::Error::Auth(format!(

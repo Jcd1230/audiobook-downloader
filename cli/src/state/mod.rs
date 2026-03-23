@@ -25,6 +25,7 @@ pub enum BookStatus {
     Downloading,
     Downloaded, // Has DRM
     Decrypted,  // Ready to play
+    Unavailable, // License denied
 }
 
 impl LibraryState {

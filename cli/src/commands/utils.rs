@@ -1,5 +1,5 @@
-use colored::*;
 use std::path::PathBuf;
+use colored::*;
 
 pub fn get_config_dir() -> PathBuf {
     let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -14,6 +14,7 @@ pub fn format_book_line(book: &crate::state::Book) -> String {
         crate::state::BookStatus::Downloading => "[Downloading  ]",
         crate::state::BookStatus::Downloaded => "[Downloaded   ]",
         crate::state::BookStatus::Decrypted => "[Decrypted    ]",
+        crate::state::BookStatus::Unavailable => "[Unavailable  ]",
     };
 
     let status_label = match book.status {
@@ -21,10 +22,11 @@ pub fn format_book_line(book: &crate::state::Book) -> String {
         crate::state::BookStatus::Downloading => status_str.blue(),
         crate::state::BookStatus::Downloaded => status_str.cyan(),
         crate::state::BookStatus::Decrypted => status_str.green(),
+        crate::state::BookStatus::Unavailable => status_str.red(),
     };
 
     let title = book.title.bold().white();
-
+    
     let mut line = format!("{} {}", status_label, title);
 
     if !book.author.is_empty() {
