@@ -5,6 +5,7 @@ mod error;
 mod media;
 mod state;
 mod config;
+mod update;
 
 use clap::Parser;
 use cli::Cli;
@@ -42,5 +43,20 @@ async fn main() -> miette::Result<()> {
 
     commands::handle(cli.command, config::Config::load(), cli.yes)
         .await
-        .map_err(|e| miette::miette!("{}", e))
+        .map_err(|e| miette::miette!("{}", e))?;
+
+    if let Some(latest) = update::check_for_update().await {
+        use colored::*;
+        eprintln!(
+            "\n{}",
+            format!(
+                "✨ A new version of audiobook-downloader is available: v{} (Current: v{})",
+                latest,
+                env!("CARGO_PKG_VERSION")
+            )
+            .dimmed()
+        );
+    }
+
+    Ok(())
 }

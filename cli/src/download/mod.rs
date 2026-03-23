@@ -27,27 +27,21 @@ impl Downloader {
     /// Downloads a large file from a GET URL to the specified path asynchronously,
     /// yielding a rich progress bar with indicatif.
     pub async fn download(&self, url: &str, output_path: &Path) -> Result<()> {
+        let pb = ProgressBar::new(0);
+        pb.set_style(ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta}) {msg}")
+            .unwrap()
+            .progress_chars("#>-"));
+        self.download_with_pb(url, output_path, pb).await
+    }
+
+    pub async fn download_with_pb(&self, url: &str, output_path: &Path, pb: ProgressBar) -> Result<()> {
         let response = self.client.get(url).send().await?.error_for_status()?;
 
         let total_size = response.content_length();
-
-        let pb = match total_size {
-            Some(size) => {
-                let pb = ProgressBar::new(size);
-                pb.set_style(ProgressStyle::default_bar()
-                    .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
-                    .unwrap()
-                    .progress_chars("#>-"));
-                pb
-            }
-            None => {
-                let pb = ProgressBar::new_spinner();
-                pb.set_style(ProgressStyle::default_spinner()
-                    .template("{spinner:.green} [{elapsed_precise}] {bytes} downloaded ({bytes_per_sec})")
-                    .unwrap());
-                pb
-            }
-        };
+        if let Some(size) = total_size {
+            pb.set_length(size);
+        }
 
         let part_path = output_path.with_extension(format!(
             "{}.part",
@@ -79,7 +73,7 @@ impl Downloader {
         // Atomically rename .part to final
         tokio::fs::rename(&part_path, output_path)
             .await
-            .context("Failed to rename part to final extension")?;
+            .context("Failed to rename part file to final path")?;
 
         Ok(())
     }

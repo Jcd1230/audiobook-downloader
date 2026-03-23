@@ -101,12 +101,24 @@ pub async fn download(
     let activation_bytes = client.get_activation_bytes().await?;
     debug!("Activation bytes acquired: {}", activation_bytes);
 
+    use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+    let multi = MultiProgress::new();
+    let global_pb = multi.add(ProgressBar::new(books_to_download.len() as u64));
+    global_pb.set_style(ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+        .unwrap()
+        .progress_chars("#>-"));
+    global_pb.set_message("Overall Progress");
+
     for mut book in books_to_download {
         if book.status != crate::state::BookStatus::NotDownloaded {
+            global_pb.inc(1);
             debug!("Skipping {} (Already downloaded or decrypted)", book.title);
             continue;
         }
 
+        global_pb.set_message(format!("Current: {}", book.title));
+        
         info!("Requesting download URL for '{}'...", book.title);
         let url = client.get_aax_download_url(&book.id).await?;
 
@@ -153,13 +165,19 @@ pub async fn download(
         let aax_path = dir_path.join(&aax_file_name);
         let m4b_path = dir_path.join(&m4b_file_name);
 
-        println!("Downloading {}...", aax_file_name);
+        let pb = multi.add(ProgressBar::new(0));
+        pb.set_style(ProgressStyle::default_bar()
+            .template("  {spinner:.green} [{elapsed_precise}] [{bar:40.magenta/blue}] {bytes}/{total_bytes} ({msg})")
+            .unwrap()
+            .progress_chars("#>-"));
+        pb.set_message(format!("Downloading {}", book.id));
+
         downloader
-            .download(&url, &aax_path)
+            .download_with_pb(&url, &aax_path, pb)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        println!("Download complete! Decrypting to {}...", m4b_file_name);
+        global_pb.set_message(format!("Decrypting: {}", book.title));
         use crate::media::Decryptor;
         decryptor
             .decrypt(&aax_path, &m4b_path, &activation_bytes)
@@ -185,7 +203,9 @@ pub async fn download(
         book.status = crate::state::BookStatus::Decrypted;
         state.upsert_book(book);
         state.save(&library_file).map_err(|e| anyhow::anyhow!(e))?;
+        global_pb.inc(1);
     }
 
+    global_pb.finish_with_message("All downloads complete!");
     Ok(())
 }
