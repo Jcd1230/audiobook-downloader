@@ -16,7 +16,7 @@ pub async fn handle(command: Commands, config: Config, yes: bool) -> Result<()> 
     match command {
         Commands::Auth => auth::auth().await,
         Commands::Sync => sync::sync().await,
-        Commands::Import => import::import(config).await,
+        Commands::Import { path } => import::import(config, path).await,
         Commands::List { json } => list::list(json).await,
         Commands::Search { query } => search::search(&query, yes).await,
         Commands::Info { id } => info::info(&id).await,

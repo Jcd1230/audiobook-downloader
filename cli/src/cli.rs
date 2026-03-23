@@ -1,8 +1,17 @@
-use clap::{Parser, Subcommand};
+use clap::{builder::styling, Parser, Subcommand};
+
+pub fn styles() -> styling::Styles {
+    styling::Styles::styled()
+        .header(styling::AnsiColor::Yellow.on_default().bold())
+        .usage(styling::AnsiColor::Yellow.on_default().bold())
+        .literal(styling::AnsiColor::Green.on_default().bold())
+        .placeholder(styling::AnsiColor::Cyan.on_default())
+}
 
 #[derive(Parser)]
 #[command(name = "audiobook-downloader")]
 #[command(about = "A fast, modular CLI to manage and download audiobooks.", long_about = None)]
+#[command(styles = styles())]
 pub struct Cli {
     /// Enable verbose logging
     #[arg(long, short, global = true)]
@@ -25,7 +34,10 @@ pub enum Commands {
     Sync,
 
     /// Scan the library directory for existing books and update local state
-    Import,
+    Import {
+        /// Optional path to scan (defaults to config library_path or current directory)
+        path: Option<String>,
+    },
 
     /// List available books in the local state
     List {
