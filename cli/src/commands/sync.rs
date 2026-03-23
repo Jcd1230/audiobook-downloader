@@ -67,6 +67,7 @@ pub async fn sync() -> Result<()> {
             series_sequence,
             duration_seconds: item.runtime_length_min.map(|m| m * 60),
             status: crate::state::BookStatus::NotDownloaded,
+            cover_url: item.product_images.and_then(|images| images.size_500),
         };
         state.upsert_book(book);
     }

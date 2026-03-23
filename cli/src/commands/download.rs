@@ -192,7 +192,8 @@ pub async fn download(
         global_pb.set_message(format!("Decrypting: {}", book.title));
         use crate::media::Decryptor;
         decryptor
-            .decrypt(&aax_path, &m4b_path, &activation_bytes)
+            .decrypt(&aax_path, &m4b_path, &activation_bytes, &book)
+            .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
         info!("Decryption of {} complete", safe_title);

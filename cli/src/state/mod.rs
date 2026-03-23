@@ -17,6 +17,7 @@ pub struct Book {
     pub series_sequence: Option<String>,
     pub duration_seconds: Option<u64>,
     pub status: BookStatus,
+    pub cover_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

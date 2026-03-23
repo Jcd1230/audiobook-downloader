@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
+use tracing::{info, debug, warn};
+use async_trait::async_trait;
 
+#[async_trait]
 pub trait Decryptor {
-    fn decrypt(&self, input: &Path, output: &Path, activation_bytes: &str) -> Result<()>;
+    async fn decrypt(&self, input: &Path, output: &Path, activation_bytes: &str, book: &crate::state::Book) -> Result<()>;
     fn extract_cue(
         &self,
         input: &Path,
@@ -26,20 +29,65 @@ impl FfmpegDecryptor {
     pub fn new() -> Self {
         Self
     }
+
+    async fn download_cover(&self, url: &str) -> Result<tempfile::NamedTempFile> {
+        debug!("Downloading cover art from: {}", url);
+        let resp = reqwest::get(url).await?.error_for_status()?;
+        let bytes = resp.bytes().await?;
+        
+        let temp = tempfile::NamedTempFile::new()?;
+        let mut file = tokio::fs::File::from_std(temp.reopen()?);
+        use tokio::io::AsyncWriteExt;
+        file.write_all(&bytes).await?;
+        Ok(temp)
+    }
 }
 
+#[async_trait]
 impl Decryptor for FfmpegDecryptor {
-    fn decrypt(&self, input: &Path, output: &Path, activation_bytes: &str) -> Result<()> {
-        let status = Command::new("ffmpeg")
-            .arg("-y") // Overwrite output files without asking
-            .arg("-activation_bytes")
-            .arg(activation_bytes)
-            .arg("-i")
-            .arg(input)
-            .arg("-c")
-            .arg("copy")
-            .arg(output)
-            .status()
+    async fn decrypt(&self, input: &Path, output: &Path, activation_bytes: &str, book: &crate::state::Book) -> Result<()> {
+        let mut cmd = Command::new("ffmpeg");
+        cmd.arg("-y")
+           .arg("-activation_bytes")
+           .arg(activation_bytes);
+
+        // Input cover if available
+        let mut cover_file = None;
+        if let Some(ref cover_url) = book.cover_url {
+            match self.download_cover(cover_url).await {
+                Ok(temp) => {
+                    cmd.arg("-i").arg(temp.path());
+                    cover_file = Some(temp);
+                }
+                Err(e) => {
+                    warn!("Failed to download cover art: {}. Proceeding without it.", e);
+                }
+            }
+        }
+
+        cmd.arg("-i").arg(input);
+        
+        // Metadata
+        cmd.arg("-metadata").arg(format!("title={}", book.title))
+           .arg("-metadata").arg(format!("artist={}", book.author))
+           .arg("-metadata").arg(format!("comment={}", book.id));
+        
+        if let Some(ref series) = book.series_title {
+            cmd.arg("-metadata").arg(format!("album={}", series));
+        }
+
+        if cover_file.is_some() {
+            // Map the second input (the image) to the first video stream and dispose it as a picture
+            cmd.arg("-map").arg("1:0")
+               .arg("-map").arg("0:0")
+               .arg("-disposition:v:0").arg("attached_pic");
+        }
+
+        cmd.arg("-c").arg("copy")
+           .arg(output);
+
+        debug!("Running ffmpeg: {:?}", cmd);
+        let status = cmd.status()
             .context("Failed to spawn ffmpeg. Is it installed and in your PATH?")?;
 
         if !status.success() {
