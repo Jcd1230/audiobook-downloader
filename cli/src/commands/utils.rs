@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use colored::*;
+use std::path::PathBuf;
 
 pub fn get_config_dir() -> PathBuf {
     let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -24,11 +24,15 @@ pub fn format_book_line(book: &crate::state::Book) -> String {
     };
 
     let title = book.title.bold().white();
-    
+
     let mut line = format!("{} {}", status_label, title);
 
     if !book.author.is_empty() {
-        line.push_str(&format!(" {} {}", "·".dimmed(), book.author.italic().dimmed()));
+        line.push_str(&format!(
+            " {} {}",
+            "·".dimmed(),
+            book.author.italic().dimmed()
+        ));
     }
 
     line.push_str(&format!(" {}", format!("({})", book.id).dimmed()));

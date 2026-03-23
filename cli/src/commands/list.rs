@@ -1,11 +1,11 @@
-use crate::commands::utils::{get_config_dir, format_book_line};
-use crate::error::{Result, CLIError};
+use crate::commands::utils::{format_book_line, get_config_dir};
+use crate::error::{CLIError, Result};
 use tracing::info;
 
 pub async fn list(json: bool) -> Result<()> {
     let library_file = get_config_dir().join("library.json");
     let state = crate::state::LibraryState::load(&library_file).map_err(|e| anyhow::anyhow!(e))?;
-    
+
     let mut books: Vec<_> = state.books.values().collect();
     books.sort_by(|a, b| {
         let title_a = a.title.to_lowercase();
@@ -18,7 +18,10 @@ pub async fn list(json: bool) -> Result<()> {
             eprintln!("No books in local library. Run 'sync' first.");
             println!("[]");
         } else {
-            println!("{}", serde_json::to_string_pretty(&books).map_err(|e| anyhow::anyhow!(e))?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&books).map_err(|e| anyhow::anyhow!(e))?
+            );
         }
     } else {
         info!("Listing locally cached books...");

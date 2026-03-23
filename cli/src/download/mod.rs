@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
+use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
-use futures_util::StreamExt;
 
 pub struct Downloader {
     client: Client,
@@ -30,7 +30,7 @@ impl Downloader {
         let response = self.client.get(url).send().await?.error_for_status()?;
 
         let total_size = response.content_length();
-        
+
         let pb = match total_size {
             Some(size) => {
                 let pb = ProgressBar::new(size);
@@ -49,25 +49,33 @@ impl Downloader {
             }
         };
 
-        let part_path = output_path.with_extension(format!("{}.part", output_path.extension().unwrap_or_default().to_string_lossy()));
-        
+        let part_path = output_path.with_extension(format!(
+            "{}.part",
+            output_path
+                .extension()
+                .unwrap_or_default()
+                .to_string_lossy()
+        ));
+
         let mut file = tokio::fs::File::create(&part_path)
             .await
             .context("Failed to create part file")?;
-            
+
         let mut downloaded: u64 = 0;
         let mut stream = response.bytes_stream();
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.context("Error while downloading chunk")?;
-            file.write_all(&chunk).await.context("Error while writing chunk")?;
-            
+            file.write_all(&chunk)
+                .await
+                .context("Error while writing chunk")?;
+
             downloaded += chunk.len() as u64;
             pb.set_position(downloaded);
         }
 
         pb.finish_with_message("Download complete");
-        
+
         // Atomically rename .part to final
         tokio::fs::rename(&part_path, output_path)
             .await

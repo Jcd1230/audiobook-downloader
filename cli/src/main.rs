@@ -1,10 +1,9 @@
 mod cli;
 mod commands;
-mod api;
-mod state;
 mod download;
-mod media;
 mod error;
+mod media;
+mod state;
 
 use clap::Parser;
 use cli::Cli;
@@ -40,7 +39,7 @@ async fn main() -> miette::Result<()> {
     }))
     .expect("Failed to set miette hook");
 
-    commands::handle(cli.command).await.map_err(|e| {
-        miette::miette!("{}", e)
-    })
+    commands::handle(cli.command)
+        .await
+        .map_err(|e| miette::miette!("{}", e))
 }

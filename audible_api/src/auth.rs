@@ -1,11 +1,11 @@
+use crate::crypto::{build_client_id, generate_pkce_pair};
 use crate::Result;
 use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use crate::crypto::{build_client_id, generate_pkce_pair};
 use std::io::Write;
-use tracing::{info, debug, warn};
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AuthInfo {
@@ -33,7 +33,7 @@ impl AuthInfo {
     pub async fn refresh_access_token(&mut self) -> Result<()> {
         info!("Refreshing Audible access token...");
         let http = Client::new();
-        
+
         let params = [
             ("app_name", "Audible"),
             ("app_version", "3.56.2"),
@@ -42,18 +42,22 @@ impl AuthInfo {
             ("source_token_type", "refresh_token"),
         ];
 
-        let resp = http.post("https://api.amazon.com/auth/token")
+        let resp = http
+            .post("https://api.amazon.com/auth/token")
             .form(&params)
             .send()
             .await?
             .error_for_status()?;
 
         let data: RefreshResponse = resp.json().await?;
-        
+
         self.access_token = data.access_token;
         self.expires = (Utc::now().timestamp() as u64) + data.expires_in;
-        
-        debug!("Access token refreshed successfully. Expires in {}s", data.expires_in);
+
+        debug!(
+            "Access token refreshed successfully. Expires in {}s",
+            data.expires_in
+        );
         Ok(())
     }
 }
@@ -92,18 +96,18 @@ struct MacDmsToken {
     device_private_key: String,
 }
 
-/// Generates the Amazon OAuth login URL, waits on a local HTTP server for the redirect callback, 
+/// Generates the Amazon OAuth login URL, waits on a local HTTP server for the redirect callback,
 /// and exchanges the authorization_code for Audible Device keys natively.
 pub async fn login_with_browser() -> Result<AuthInfo> {
     debug!("Initializing browser login flow...");
-    
+
     // 1. Generate PKCE & Serial
     let (verifier, challenge) = generate_pkce_pair();
     let serial = uuid::Uuid::new_v4().as_simple().to_string().to_uppercase();
     let country_code = "us"; // We can make this configurable later
     let domain = "com";
     let market_place_id = "ATVPDKIKX0DER"; // US marketplace
-    
+
     let login_url = format!(
         "https://www.amazon.{}/ap/signin?openid.oa2.response_type=code&openid.oa2.code_challenge_method=S256&openid.oa2.code_challenge={}&openid.return_to=https://www.amazon.{}/ap/maplanding&openid.assoc_handle=amzn_audible_ios_{}&openid.identity=http://specs.openid.net/auth/2.0/identifier_select&pageId=amzn_audible_ios&accountStatusPolicy=P1&openid.claimed_id=http://specs.openid.net/auth/2.0/identifier_select&openid.mode=checkid_setup&openid.ns.oa2=http://www.amazon.com/ap/ext/oauth/2&openid.oa2.client_id=device:{}&openid.ns.pape=http://specs.openid.net/extensions/pape/1.0&marketPlaceId={}&openid.oa2.scope=device_auth_access&forceMobileLayout=true&openid.ns=http://specs.openid.net/auth/2.0&openid.pape.max_auth_age=0",
         domain, challenge, domain, country_code, build_client_id(&serial), market_place_id
@@ -125,15 +129,18 @@ pub async fn login_with_browser() -> Result<AuthInfo> {
     std::io::stdin().read_line(&mut input)?;
     let url_str = input.trim();
 
-    let auth_code = extract_code_from_url(url_str)
-        .ok_or_else(|| crate::Error::Auth("Failed to find openid.oa2.authorization_code in the provided URL".to_string()))?;
-        
+    let auth_code = extract_code_from_url(url_str).ok_or_else(|| {
+        crate::Error::Auth(
+            "Failed to find openid.oa2.authorization_code in the provided URL".to_string(),
+        )
+    })?;
+
     info!("Exchanging auth code for device registration tokens...");
 
     // 2. Exchange code for device registration tokens
     let http = Client::new();
     let api_url = format!("https://api.amazon.{}/auth/register", domain);
-    
+
     let payload = json!({
         "requested_token_type": [
             "bearer",
@@ -164,10 +171,7 @@ pub async fn login_with_browser() -> Result<AuthInfo> {
         "requested_extensions": ["device_info", "customer_info"]
     });
 
-    let resp = http.post(&api_url)
-        .json(&payload)
-        .send()
-        .await?;
+    let resp = http.post(&api_url).json(&payload).send().await?;
 
     if !resp.status().is_success() {
         let status = resp.status().to_string();
@@ -178,7 +182,7 @@ pub async fn login_with_browser() -> Result<AuthInfo> {
 
     let data: RegisterResponse = resp.json().await?;
     let tokens = data.response.success.tokens;
-    
+
     let expires_in: u64 = tokens.bearer.expires_in.parse().unwrap_or(3600);
     let expires = (Utc::now().timestamp() as u64) + expires_in;
 

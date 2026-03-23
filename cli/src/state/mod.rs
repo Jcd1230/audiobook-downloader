@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LibraryState {
     pub books: HashMap<String, Book>,
 }
@@ -23,14 +23,8 @@ pub struct Book {
 pub enum BookStatus {
     NotDownloaded,
     Downloading,
-    Downloaded,    // Has DRM
-    Decrypted,     // Ready to play
-}
-
-impl Default for LibraryState {
-    fn default() -> Self {
-        Self { books: HashMap::new() }
-    }
+    Downloaded, // Has DRM
+    Decrypted,  // Ready to play
 }
 
 impl LibraryState {
@@ -57,10 +51,6 @@ impl LibraryState {
         self.books.insert(book.id.clone(), book);
     }
 
-    pub fn get_book(&self, id: &str) -> Option<&Book> {
-        self.books.get(id)
-    }
-
     pub fn search(&self, query: &str) -> Vec<Book> {
         let lower_query = query.to_lowercase();
         let mut exact_id_matches = Vec::new();
@@ -84,5 +74,78 @@ impl LibraryState {
         } else {
             substring_matches
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn create_test_book(id: &str, title: &str, author: &str) -> Book {
+        Book {
+            id: id.to_string(),
+            title: title.to_string(),
+            author: author.to_string(),
+            narrator: None,
+            series_title: None,
+            series_sequence: None,
+            duration_seconds: None,
+            status: BookStatus::NotDownloaded,
+        }
+    }
+
+    #[test]
+    fn test_search_exact_id() {
+        let mut books = HashMap::new();
+        books.insert(
+            "B01".to_string(),
+            create_test_book("B01", "Book One", "Author A"),
+        );
+        books.insert(
+            "B02".to_string(),
+            create_test_book("B02", "Book Two", "Author B"),
+        );
+        let state = LibraryState { books };
+
+        let results = state.search("B01");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "B01");
+    }
+
+    #[test]
+    fn test_search_exact_title() {
+        let mut books = HashMap::new();
+        books.insert(
+            "B01".to_string(),
+            create_test_book("B01", "Book One", "Author A"),
+        );
+        books.insert(
+            "B02".to_string(),
+            create_test_book("B02", "Book Two", "Author B"),
+        );
+        let state = LibraryState { books };
+
+        let results = state.search("Book Two");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Book Two");
+    }
+
+    #[test]
+    fn test_search_substring() {
+        let mut books = HashMap::new();
+        books.insert(
+            "B01".to_string(),
+            create_test_book("B01", "Rust Programming", "Author A"),
+        );
+        books.insert(
+            "B02".to_string(),
+            create_test_book("B02", "Go Programming", "Author B"),
+        );
+        let state = LibraryState { books };
+
+        let results = state.search("rust");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "B01");
     }
 }

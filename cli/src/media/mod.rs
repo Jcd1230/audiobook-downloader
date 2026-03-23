@@ -4,7 +4,14 @@ use std::process::Command;
 
 pub trait Decryptor {
     fn decrypt(&self, input: &Path, output: &Path, activation_bytes: &str) -> Result<()>;
-    fn extract_cue(&self, input: &Path, output: &Path, title: &str, author: &str, m4b_filename: &str) -> Result<()>;
+    fn extract_cue(
+        &self,
+        input: &Path,
+        output: &Path,
+        title: &str,
+        author: &str,
+        m4b_filename: &str,
+    ) -> Result<()>;
 }
 
 pub struct FfmpegDecryptor;
@@ -36,16 +43,27 @@ impl Decryptor for FfmpegDecryptor {
             .context("Failed to spawn ffmpeg. Is it installed and in your PATH?")?;
 
         if !status.success() {
-            anyhow::bail!("ffmpeg failed to decrypt the audiobook with status: {}", status);
+            anyhow::bail!(
+                "ffmpeg failed to decrypt the audiobook with status: {}",
+                status
+            );
         }
-        
+
         // Clean up the original encrypted .aax file
-        std::fs::remove_file(input).context("Failed to clean up original .aax file after decryption")?;
+        std::fs::remove_file(input)
+            .context("Failed to clean up original .aax file after decryption")?;
 
         Ok(())
     }
 
-    fn extract_cue(&self, input: &Path, output: &Path, title: &str, author: &str, m4b_filename: &str) -> Result<()> {
+    fn extract_cue(
+        &self,
+        input: &Path,
+        output: &Path,
+        title: &str,
+        author: &str,
+        m4b_filename: &str,
+    ) -> Result<()> {
         let output_ffprobe = Command::new("ffprobe")
             .arg("-v")
             .arg("error")
@@ -61,8 +79,8 @@ impl Decryptor for FfmpegDecryptor {
         }
 
         let stdout_str = String::from_utf8_lossy(&output_ffprobe.stdout);
-        let parsed: serde_json::Value = serde_json::from_str(&stdout_str)
-            .context("Failed to parse ffprobe json output")?;
+        let parsed: serde_json::Value =
+            serde_json::from_str(&stdout_str).context("Failed to parse ffprobe json output")?;
 
         let mut cue_data = String::new();
         cue_data.push_str(&format!("TITLE \"{}\"\n", title));
@@ -73,22 +91,23 @@ impl Decryptor for FfmpegDecryptor {
             for (i, chapter) in chapters.iter().enumerate() {
                 let track_num = i + 1;
                 let fallback_title = format!("Chapter {}", track_num);
-                let ch_title = chapter["tags"]["title"]
-                    .as_str()
-                    .unwrap_or(&fallback_title);
-                
+                let ch_title = chapter["tags"]["title"].as_str().unwrap_or(&fallback_title);
+
                 // CUE supports MM:SS:FF. ffprobe start_time is seconds as string
                 let start_time_str = chapter["start_time"].as_str().unwrap_or("0.000000");
                 let start_time_f: f64 = start_time_str.parse().unwrap_or(0.0);
-                
+
                 let mins = (start_time_f / 60.0).floor() as u64;
                 let secs = (start_time_f % 60.0).floor() as u64;
                 // Frames are typically 1/75 of a second for CUE formatting.
                 let frames = ((start_time_f.fract() * 75.0).round()) as u64;
-                
+
                 cue_data.push_str(&format!("  TRACK {:0>2} AUDIO\n", track_num));
                 cue_data.push_str(&format!("    TITLE \"{}\"\n", ch_title));
-                cue_data.push_str(&format!("    INDEX 01 {:0>2}:{:0>2}:{:0>2}\n", mins, secs, frames));
+                cue_data.push_str(&format!(
+                    "    INDEX 01 {:0>2}:{:0>2}:{:0>2}\n",
+                    mins, secs, frames
+                ));
             }
         }
 
