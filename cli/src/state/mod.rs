@@ -60,4 +60,29 @@ impl LibraryState {
     pub fn get_book(&self, id: &str) -> Option<&Book> {
         self.books.get(id)
     }
+
+    pub fn search(&self, query: &str) -> Vec<Book> {
+        let lower_query = query.to_lowercase();
+        let mut exact_id_matches = Vec::new();
+        let mut exact_title_matches = Vec::new();
+        let mut substring_matches = Vec::new();
+
+        for book in self.books.values() {
+            if book.id.to_lowercase() == lower_query {
+                exact_id_matches.push(book.clone());
+            } else if book.title.to_lowercase() == lower_query {
+                exact_title_matches.push(book.clone());
+            } else if book.title.to_lowercase().contains(&lower_query) {
+                substring_matches.push(book.clone());
+            }
+        }
+
+        if !exact_id_matches.is_empty() {
+            exact_id_matches
+        } else if !exact_title_matches.is_empty() {
+            exact_title_matches
+        } else {
+            substring_matches
+        }
+    }
 }
