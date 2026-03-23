@@ -8,6 +8,10 @@ pub struct Cli {
     #[arg(long, short, global = true)]
     pub verbose: bool,
 
+    /// Non-interactive mode (auto-confirm prompts)
+    #[arg(long, short, global = true)]
+    pub yes: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -19,6 +23,9 @@ pub enum Commands {
 
     /// Fetch metadata from the server and update local state
     Sync,
+
+    /// Scan the library directory for existing books and update local state
+    Import,
 
     /// List available books in the local state
     List {
@@ -62,5 +69,21 @@ pub enum Commands {
     },
 
     /// View or modify CLI settings
-    Config,
+    Config {
+        #[command(subcommand)]
+        subcommand: ConfigSubcommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ConfigSubcommand {
+    /// Show current configuration
+    Show,
+    /// Set a configuration value
+    Set {
+        /// The setting key (e.g. library_path, filename_template)
+        key: String,
+        /// The value to set
+        value: String,
+    },
 }

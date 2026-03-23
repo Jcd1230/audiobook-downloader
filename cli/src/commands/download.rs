@@ -8,6 +8,8 @@ pub async fn download(
     no_cue: bool,
     no_folder: bool,
     filename: Option<String>,
+    _config: crate::config::Config,
+    _yes: bool,
 ) -> Result<()> {
     let auth_path = get_config_dir().join("auth.json");
     let token_data = std::fs::read_to_string(&auth_path).map_err(|_| CLIError::AuthExpired)?;

@@ -2,7 +2,7 @@ use crate::commands::utils::{format_book_line, get_config_dir};
 use crate::error::Result;
 use tracing::info;
 
-pub async fn search(query: &str) -> Result<()> {
+pub async fn search(query: &str, _yes: bool) -> Result<()> {
     let library_file = get_config_dir().join("library.json");
     let state = crate::state::LibraryState::load(&library_file).map_err(|e| anyhow::anyhow!(e))?;
 

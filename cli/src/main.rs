@@ -4,6 +4,7 @@ mod download;
 mod error;
 mod media;
 mod state;
+mod config;
 
 use clap::Parser;
 use cli::Cli;
@@ -39,7 +40,7 @@ async fn main() -> miette::Result<()> {
     }))
     .expect("Failed to set miette hook");
 
-    commands::handle(cli.command)
+    commands::handle(cli.command, config::Config::load(), cli.yes)
         .await
         .map_err(|e| miette::miette!("{}", e))
 }

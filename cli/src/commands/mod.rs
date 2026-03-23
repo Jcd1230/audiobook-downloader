@@ -1,21 +1,24 @@
 pub mod auth;
 pub mod config;
 pub mod download;
+pub mod import;
 pub mod info;
 pub mod list;
 pub mod search;
 pub mod sync;
 pub mod utils;
 
-use crate::cli::Commands;
+use crate::cli::{Commands, ConfigSubcommand};
+use crate::config::Config;
 use crate::error::Result;
 
-pub async fn handle(command: Commands) -> Result<()> {
+pub async fn handle(command: Commands, config: Config, yes: bool) -> Result<()> {
     match command {
         Commands::Auth => auth::auth().await,
         Commands::Sync => sync::sync().await,
+        Commands::Import => import::import(config).await,
         Commands::List { json } => list::list(json).await,
-        Commands::Search { query } => search::search(&query).await,
+        Commands::Search { query } => search::search(&query, yes).await,
         Commands::Info { id } => info::info(&id).await,
         Commands::Download {
             query,
@@ -23,7 +26,7 @@ pub async fn handle(command: Commands) -> Result<()> {
             no_cue,
             no_folder,
             filename,
-        } => download::download(query.as_deref(), all, no_cue, no_folder, filename).await,
-        Commands::Config => config::config().await,
+        } => download::download(query.as_deref(), all, no_cue, no_folder, filename, config, yes).await,
+        Commands::Config { subcommand } => config::config(subcommand, config).await,
     }
 }
