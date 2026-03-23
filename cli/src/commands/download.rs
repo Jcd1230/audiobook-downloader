@@ -8,8 +8,8 @@ pub async fn download(
     no_cue: bool,
     no_folder: bool,
     filename: Option<String>,
-    _config: crate::config::Config,
-    _yes: bool,
+    config: crate::config::Config,
+    yes: bool,
 ) -> Result<()> {
     let auth_path = get_config_dir().join("auth.json");
     let token_data = std::fs::read_to_string(&auth_path).map_err(|_| CLIError::AuthExpired)?;
@@ -39,6 +39,20 @@ pub async fn download(
             return Ok(());
         } else if matches.len() == 1 || all {
             books_to_download.extend(matches);
+        } else if !yes {
+            use inquire::MultiSelect;
+            let options = matches.iter().map(|b| format!("{} ({})", b.title, b.id)).collect::<Vec<_>>();
+            let ans = MultiSelect::new("Multiple books matched. Select which ones to download:", options).prompt();
+            
+            match ans {
+                Ok(choices) => {
+                    for choice in choices {
+                        let index = matches.iter().position(|b| format!("{} ({})", b.title, b.id) == choice).unwrap();
+                        books_to_download.push(matches[index].clone());
+                    }
+                }
+                Err(_) => return Err(CLIError::Anyhow(anyhow::anyhow!("Selection cancelled."))),
+            }
         } else {
             println!(
                 "Found {} matching books. Please be more specific or use --all:",
@@ -73,7 +87,15 @@ pub async fn download(
 
     let downloader = crate::download::Downloader::new();
     let decryptor = crate::media::FfmpegDecryptor::new();
-    let download_dir = std::env::current_dir()?;
+    
+    // Prioritize library_path from config
+    let download_dir = if let Some(ref path) = config.library_path {
+        std::path::PathBuf::from(path)
+    } else {
+        std::env::current_dir()?
+    };
+    
+    info!("Downloading to: {}", download_dir.display());
 
     info!("Fetching DRM activation bytes...");
     let activation_bytes = client.get_activation_bytes().await?;
