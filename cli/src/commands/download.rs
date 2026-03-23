@@ -41,13 +41,23 @@ pub async fn download(
             books_to_download.extend(matches);
         } else if !yes {
             use inquire::MultiSelect;
-            let options = matches.iter().map(|b| format!("{} ({})", b.title, b.id)).collect::<Vec<_>>();
-            let ans = MultiSelect::new("Multiple books matched. Select which ones to download:", options).prompt();
-            
+            let options = matches
+                .iter()
+                .map(|b| format!("{} ({})", b.title, b.id))
+                .collect::<Vec<_>>();
+            let ans = MultiSelect::new(
+                "Multiple books matched. Select which ones to download:",
+                options,
+            )
+            .prompt();
+
             match ans {
                 Ok(choices) => {
                     for choice in choices {
-                        let index = matches.iter().position(|b| format!("{} ({})", b.title, b.id) == choice).unwrap();
+                        let index = matches
+                            .iter()
+                            .position(|b| format!("{} ({})", b.title, b.id) == choice)
+                            .unwrap();
                         books_to_download.push(matches[index].clone());
                     }
                 }
@@ -87,14 +97,14 @@ pub async fn download(
 
     let downloader = crate::download::Downloader::new();
     let decryptor = crate::media::FfmpegDecryptor::new();
-    
+
     // Prioritize library_path from config
     let download_dir = if let Some(ref path) = config.library_path {
         std::path::PathBuf::from(path)
     } else {
         std::env::current_dir()?
     };
-    
+
     info!("Downloading to: {}", download_dir.display());
 
     info!("Fetching DRM activation bytes...");
@@ -118,7 +128,7 @@ pub async fn download(
         }
 
         global_pb.set_message(format!("Current: {}", book.title));
-        
+
         info!("Requesting download URL for '{}'...", book.title);
         let url = match client.get_aax_download_url(&book.id).await {
             Ok(url) => url,

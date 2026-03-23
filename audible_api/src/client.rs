@@ -134,8 +134,8 @@ impl Client {
             return Err(crate::Error::LicenseDenied(asin.to_string()));
         }
 
-        let download_url = response["content_license"]["content_metadata"]["content_url"]["offline_url"]
-
+        let download_url = response["content_license"]["content_metadata"]["content_url"]
+            ["offline_url"]
             .as_str()
             .ok_or_else(|| {
                 crate::Error::Auth(format!(

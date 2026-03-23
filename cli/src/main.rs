@@ -1,10 +1,10 @@
 mod cli;
 mod commands;
+mod config;
 mod download;
 mod error;
 mod media;
 mod state;
-mod config;
 mod update;
 
 use clap::Parser;

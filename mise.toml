@@ -6,3 +6,30 @@ build = "cargo build"
 test = "cargo test"
 run = "cargo run --"
 check = "cargo check"
+
+[tasks.release]
+description = "Automate the release process (bump version, tag, and push)"
+run = """
+#!/usr/bin/env bash
+set -e
+VERSION=$1
+if [ -z "$VERSION" ]; then
+  echo "Usage: mise run release <VERSION>"
+  exit 1
+fi
+
+# Clean version (strip 'v' prefix if present)
+VERSION=${VERSION#v}
+
+echo "Bumping version to v$VERSION..."
+sed -i "s/^version = \\"[0-9.]*\\"/version = \\"$VERSION\\"/\" cli/Cargo.toml
+sed -i "s/^version = \\"[0-9.]*\\"/version = \\"$VERSION\\"/\" audible_api/Cargo.toml
+
+jj commit -m "chore: bump version to v$VERSION"
+jj bookmark move main --to @
+jj tag set "v$VERSION" -r main
+jj git push --bookmark main
+git push origin "v$VERSION"
+
+echo "Release v$VERSION created and pushed!"
+"""

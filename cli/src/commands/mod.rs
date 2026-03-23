@@ -9,7 +9,7 @@ pub mod search;
 pub mod sync;
 pub mod utils;
 
-use crate::cli::{Commands, ConfigSubcommand};
+use crate::cli::Commands;
 use crate::config::Config;
 use crate::error::Result;
 
@@ -27,7 +27,18 @@ pub async fn handle(command: Commands, config: Config, yes: bool) -> Result<()> 
             no_cue,
             no_folder,
             filename,
-        } => download::download(query.as_deref(), all, no_cue, no_folder, filename, config, yes).await,
+        } => {
+            download::download(
+                query.as_deref(),
+                all,
+                no_cue,
+                no_folder,
+                filename,
+                config,
+                yes,
+            )
+            .await
+        }
         Commands::Config { subcommand } => config::config(subcommand, config).await,
         Commands::Completions { shell } => completions::completions(shell).await,
     }

@@ -1,10 +1,10 @@
 use crate::commands::utils::get_config_dir;
 use crate::config::Config;
-use crate::error::{Result, CLIError};
+use crate::error::{CLIError, Result};
 use crate::state::LibraryState;
 use regex::Regex;
 use std::collections::HashSet;
-use tracing::{info, debug};
+use tracing::{debug, info};
 use walkdir::WalkDir;
 
 pub async fn import(mut config: Config, path: Option<String>) -> Result<()> {
@@ -25,19 +25,18 @@ pub async fn import(mut config: Config, path: Option<String>) -> Result<()> {
         return Err(CLIError::EmptyLibrary);
     }
 
-    let absolute_path = std::fs::canonicalize(&library_path).map_err(|e| {
-        anyhow::anyhow!("Failed to resolve path '{}': {}", library_path, e)
-    })?;
+    let absolute_path = std::fs::canonicalize(&library_path)
+        .map_err(|e| anyhow::anyhow!("Failed to resolve path '{}': {}", library_path, e))?;
     let path_str = absolute_path.to_string_lossy().to_string();
 
     info!("Scanning directory: {}", path_str);
-    
+
     // Regex for ASIN: [B0...] or [ISBN-10]
     let asin_re = Regex::new(r"\[([A-Z0-9]{10})\]").unwrap();
     let mut found_asins = HashSet::new();
 
     for entry in WalkDir::new(&path_str).into_iter().filter_map(|e| e.ok()) {
-        if entry.file_type().is_file() && entry.path().extension().map_or(false, |ext| ext == "m4b") {
+        if entry.file_type().is_file() && entry.path().extension().is_some_and(|ext| ext == "m4b") {
             let entry_path_str = entry.path().to_string_lossy();
             if let Some(caps) = asin_re.captures(&entry_path_str) {
                 let asin = caps.get(1).unwrap().as_str();
@@ -48,7 +47,10 @@ pub async fn import(mut config: Config, path: Option<String>) -> Result<()> {
     }
 
     let mut updated_count = 0;
-    println!("Found {} unique ASINs in filesystem. Updating database...", found_asins.len());
+    println!(
+        "Found {} unique ASINs in filesystem. Updating database...",
+        found_asins.len()
+    );
 
     for asin in &found_asins {
         if let Some(book) = state.books.get_mut(asin) {
@@ -71,7 +73,10 @@ pub async fn import(mut config: Config, path: Option<String>) -> Result<()> {
     if auto_save_config {
         config.library_path = Some(path_str.clone());
         config.save().map_err(|e| anyhow::anyhow!(e))?;
-        println!("✨ Detected books in {}. Saving this as your default library_path.", path_str);
+        println!(
+            "✨ Detected books in {}. Saving this as your default library_path.",
+            path_str
+        );
     }
 
     println!("Import complete!");

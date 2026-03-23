@@ -1,7 +1,7 @@
-use clap::CommandFactory;
-use clap_complete::{generate, Shell};
 use crate::cli::Cli;
 use crate::error::Result;
+use clap::CommandFactory;
+use clap_complete::{generate, Shell};
 use std::io;
 
 pub async fn completions(shell: Shell) -> Result<()> {

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 use reqwest::Client;
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
@@ -24,18 +24,12 @@ impl Downloader {
         Self { client }
     }
 
-    /// Downloads a large file from a GET URL to the specified path asynchronously,
-    /// yielding a rich progress bar with indicatif.
-    pub async fn download(&self, url: &str, output_path: &Path) -> Result<()> {
-        let pb = ProgressBar::new(0);
-        pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta}) {msg}")
-            .unwrap()
-            .progress_chars("#>-"));
-        self.download_with_pb(url, output_path, pb).await
-    }
-
-    pub async fn download_with_pb(&self, url: &str, output_path: &Path, pb: ProgressBar) -> Result<()> {
+    pub async fn download_with_pb(
+        &self,
+        url: &str,
+        output_path: &Path,
+        pb: ProgressBar,
+    ) -> Result<()> {
         let response = self.client.get(url).send().await?.error_for_status()?;
 
         let total_size = response.content_length();

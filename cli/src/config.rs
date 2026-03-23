@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::commands::utils::get_config_dir;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Config {

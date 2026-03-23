@@ -7,8 +7,14 @@ pub async fn config(subcommand: ConfigSubcommand, mut config: Config) -> Result<
     match subcommand {
         ConfigSubcommand::Show => {
             println!("Current Configuration:");
-            println!("  library_path: {}", config.library_path.as_deref().unwrap_or("[Not Set]"));
-            println!("  filename_template: {}", config.filename_template.as_deref().unwrap_or("[Not Set]"));
+            println!(
+                "  library_path: {}",
+                config.library_path.as_deref().unwrap_or("[Not Set]")
+            );
+            println!(
+                "  filename_template: {}",
+                config.filename_template.as_deref().unwrap_or("[Not Set]")
+            );
         }
         ConfigSubcommand::Set { key, value } => {
             match key.as_str() {

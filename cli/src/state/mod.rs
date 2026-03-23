@@ -24,8 +24,8 @@ pub struct Book {
 pub enum BookStatus {
     NotDownloaded,
     Downloading,
-    Downloaded, // Has DRM
-    Decrypted,  // Ready to play
+    Downloaded,  // Has DRM
+    Decrypted,   // Ready to play
     Unavailable, // License denied
 }
 
@@ -94,6 +94,7 @@ mod tests {
             series_sequence: None,
             duration_seconds: None,
             status: BookStatus::NotDownloaded,
+            cover_url: None,
         }
     }
 
