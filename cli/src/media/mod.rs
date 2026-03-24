@@ -59,9 +59,15 @@ impl Decryptor for FfmpegDecryptor {
         book: &crate::state::Book,
     ) -> Result<()> {
         let mut cmd = Command::new("ffmpeg");
-        cmd.arg("-y").arg("-activation_bytes").arg(activation_bytes);
+        cmd.arg("-y"); // Global option: overwrite output
 
-        // Input cover if available
+        // Input 0: The encrypted audiobook (MUST have activation_bytes before it)
+        cmd.arg("-activation_bytes")
+            .arg(activation_bytes)
+            .arg("-i")
+            .arg(input);
+
+        // Input 1: Cover art (if available)
         let mut cover_file = None;
         if let Some(ref cover_url) = book.cover_url {
             match self.download_cover(cover_url).await {
@@ -78,9 +84,7 @@ impl Decryptor for FfmpegDecryptor {
             }
         }
 
-        cmd.arg("-i").arg(input);
-
-        // Metadata
+        // Metadata (Applied to output)
         cmd.arg("-metadata")
             .arg(format!("title={}", book.title))
             .arg("-metadata")
@@ -94,12 +98,10 @@ impl Decryptor for FfmpegDecryptor {
 
         if cover_file.is_some() {
             // Map the second input (the image) to the first video stream and dispose it as a picture
-            cmd.arg("-map")
-                .arg("1:0")
-                .arg("-map")
-                .arg("0:0")
-                .arg("-disposition:v:0")
-                .arg("attached_pic");
+            // Input 0 is audio, Input 1 is image
+            cmd.arg("-map").arg("0:0") // Take audio from first input
+               .arg("-map").arg("1:0") // Take video/image from second input
+               .arg("-disposition:v:0").arg("attached_pic");
         }
 
         cmd.arg("-c").arg("copy").arg(output);
