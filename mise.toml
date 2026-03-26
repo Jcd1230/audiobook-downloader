@@ -25,11 +25,18 @@ echo "Bumping version to v$VERSION..."
 sed -i "s/^version = \\"[0-9.]*\\"/version = \\"$VERSION\\"/\" cli/Cargo.toml
 sed -i "s/^version = \\"[0-9.]*\\"/version = \\"$VERSION\\"/\" audible_api/Cargo.toml
 
-jj commit -m "chore: bump version to v$VERSION"
+# Describe the current working copy with the version bump
+jj describe -m "chore: bump version to v$VERSION"
+# Move the main bookmark to the current working copy
 jj bookmark move main --to @
+# Set the tag on the main bookmark
 jj tag set "v$VERSION" -r main
+# Push the bookmark and tag
 jj git push --bookmark main
 git push origin "v$VERSION"
+
+# Start a new empty working copy for future work
+jj new -m ""
 
 echo "Release v$VERSION created and pushed!"
 """
