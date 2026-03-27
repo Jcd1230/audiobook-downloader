@@ -39,6 +39,7 @@ jobs:
           # (Required) Comma-separated list of binary names (non-extension portion) to build and upload.
           # Note that glob pattern is not supported yet.
           bin: audiobook-downloader
+          manifest-path: cli/Cargo.toml
           target: ${{ matrix.target }}
           tar: unix
           zip: windows
